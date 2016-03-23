@@ -53,7 +53,7 @@ void parseFile(int* n_clauses, int* n_vars, int** clause_matrix, char* filename)
 int get_bit(int decimal, int N);
 int get_cur_comb(int cur_var, int prev_comb);
 int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int cur_comb);
-void bit_array_to_str(char* dest, int array, int n_bits);
+void print_sol(int cur_sol, int n_vars);
 
 
 int cur_maxsat=0;
@@ -72,11 +72,9 @@ void main(){
 	MAXSAT(n_clauses, n_vars, clause_matrix, -1, 1);
 
 
-	char* sol = (char *) malloc((n_vars+1)*sizeof(char));
-	bit_array_to_str(sol, cur_sol, n_vars);
-
-	printf("MAXSAT: %d\n");
-	printf("Possible solution: %s \n", )
+	
+	printf("%d %d\n", cur_maxsat, n_solutions);
+	print_sol(cur_sol);
 
 }
 
@@ -139,9 +137,12 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int cur_c
 	for(i=0; i<n_clauses; i++) //for each clause
 		for(j=0; j<abs(cur_var); j++){ //for each variable -> each variable is a bit of cur_ass
 			
-			if( (get_bit(cur_comb,j) == 1 && clause_matrix[i][j] > 0) || (get_bit(cur_comb,j) == 0 && clause_matrix[i][j] < 0) ){ //if the variable corresponds
-				n_clauses_satisfied++;
-				break; //only one variable needs to match for the clause to be satisfied
+			if(clause_matrix[i][j]!=0){ //if clause contains the variable
+
+				if( (get_bit(cur_comb,j) == 1 && clause_matrix[i][j] > 0) || (get_bit(cur_comb,j) == 0 && clause_matrix[i][j] < 0) ){ //if the variable corresponds
+					n_clauses_satisfied++;
+					break; //only one variable needs to match for the clause to be satisfied
+				}
 			}
 		}
 	
@@ -158,12 +159,13 @@ int get_bit(int decimal, int N){
 		return 0;
 }
 
-void bit_array_to_str(char* dest, int array, int n_bits){
+void print_sol(int cur_sol, int n_vars);
 	int i;
-
-	for(i=0; i<n_bits; i++)
+	for(i=0; i<n_vars; i++){
 		if(get_bit(array, i)==1)
-			dest[n_bits] 
-
-	dest[n_bits] = '\0';
+			printf("%d ", i+1);
+		else
+			printf("%d ", -i-1);
+	}
+	printf("\n");
 }
