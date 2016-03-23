@@ -76,11 +76,7 @@ void parseFile(int* n_clauses, int* n_vars, int** clause_matrix, char* filename)
 int get_bit(int decimal, int N);
 int get_cur_comb(int cur_var, int prev_comb);
 int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int cur_comb);
-<<<<<<< HEAD
 void print_sol(int cur_sol, int n_vars);
-=======
->>>>>>> 8252f34e287b3b305b8e08470600db767fe37c15
-
 
 int cur_maxsat=0;
 int n_solutions=0;
@@ -97,13 +93,9 @@ void main(){
 	MAXSAT(n_clauses, n_vars, clause_matrix,  1, 0);
 	MAXSAT(n_clauses, n_vars, clause_matrix, -1, 1);
 
-<<<<<<< HEAD
-
 	
 	printf("%d %d\n", cur_maxsat, n_solutions);
 	print_sol(cur_sol);
-=======
->>>>>>> 8252f34e287b3b305b8e08470600db767fe37c15
 
 }
 
@@ -186,7 +178,6 @@ int get_bit(int decimal, int N){
 		return 1;
 	else
 		return 0;
-<<<<<<< HEAD
 }
 
 void print_sol(int cur_sol, int n_vars);
@@ -198,6 +189,4 @@ void print_sol(int cur_sol, int n_vars);
 			printf("%d ", -i-1);
 	}
 	printf("\n");
-=======
->>>>>>> 8252f34e287b3b305b8e08470600db767fe37c15
 }
