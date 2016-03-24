@@ -1,19 +1,11 @@
 /*
-
-
 BRIEF EXPLANATION OF NOTATION Every:
-
-
 USED variable can be either 0 or 1. So a combination of variable assignments can be described by a bit vector.
 And a bit vector can also describe an Integer. Hence, combinations of variable assignments can be described by ints.
-
 Since we're going down a binary tree and looking variable by variable, we have to keep track of which variable we're looking at,
 so that we change/evaluate the appropriate bit.
-
 An example with 3 variables: (V_3 V_2 V_1)
-
 <<<<<<< HEAD
-
                                                                          ____Start____
                                                                         /             \
                                                                  ______/               \______
@@ -31,16 +23,11 @@ V2:            (0: [- 0 0])                         (2: [- 1 0])                
               /        \                            /            \                             /        \                            /         \
              /          \                          /              \                           /          \                          /           \
 V3:  (0: [0 0 0])   (4: [1 0 0])          (2: [0 1 0])          (6: [1 1 0])        (1: [0 0 1])       (5: [1 0 1])       (3: [0 1 1])     (7: [1 1 1]) 
-
-
 As one can see, at each level the combinations are univocal. We just need to know what the order of the last bit we have to check,
 which coincides with the variable's id.
-
 As stated in the assignment, each variable is represented by an integer, whose absolute value is the variable's id. If the value is positive,
 the variable is set to True, else it is set to Negative. Example: -3 means V_3 -> False. 
 FOR THIS REASON, THE FIRST VARIABLE ID IS ONE, NOT ZERO. So in the bit array, bit_x refers to variable_(x+1).
-
-
 */
 
 #include <stdio.h>
@@ -49,7 +36,7 @@ FOR THIS REASON, THE FIRST VARIABLE ID IS ONE, NOT ZERO. So in the bit array, bi
 
 
 void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, __uint128_t prev_comb);
-int** parseFile(int* n_clauses, int* n_vars, char* filename);
+int** parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]);
 int get_bit(__uint128_t decimal, int N);
 int get_cur_comb(int cur_var, __uint128_t prev_comb);
 int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128_t cur_comb, int* n_clauses_unsatisfied);
@@ -201,19 +188,54 @@ void free_matrix(int** clause_matrix, int n_clauses){
 	free(clause_matrix);
 }
 
-int** parseFile(int* n_clauses, int* n_vars, char* filename){
-	*n_clauses = 4;
-	*n_vars = 3;
+int **parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]){
+	int n,j,i = 0;
+   	long elapsed_seconds;
+  	char line[80];
+   	int matrix_line = 0, matrix_column = 0;
+   	int field = -1;
+	FILE *fr;
+	char *start;
+	int ** clause_matrix;
+   	fr = fopen (name_of_the_file, "rt");  /* open the file for reading */
+   	
+   	/*Read n_vars and n_clauses*/
+	fgets(line,80,fr);
+	sscanf(line, "%d" "%d", n_vars, n_clauses);
+	//printf("N_vars =  %d  N_clauses = %d \n",*n_vars,*n_clauses);
 
-	int ** clause_matrix = (int**) malloc(*n_clauses * sizeof(int*));
-	int i=0;
-	for(i=0; i<*n_clauses; i++)
-		clause_matrix[i] = (int*) malloc(20 * sizeof(int));
 
-	clause_matrix[0][0] = -1; clause_matrix[0][1] =  0; clause_matrix[0][2] =  0; clause_matrix[0][3] =  0;
-	clause_matrix[1][0] =  1; clause_matrix[1][1] =  2; clause_matrix[1][2] =  0; clause_matrix[1][3] =  0;
-	clause_matrix[2][0] = -2; clause_matrix[2][1] =  3; clause_matrix[2][2] =  0; clause_matrix[2][3] =  0;
-	clause_matrix[3][0] =  1; clause_matrix[3][1] = -2; clause_matrix[3][2] = -3; clause_matrix[3][3] =  0;
 
-	return clause_matrix;
+    clause_matrix = (int**)malloc( *n_clauses * sizeof( int* ));
+
+    for (i = 0; i < *n_clauses; i++){
+    	clause_matrix[i] = (int *)malloc(*n_vars * sizeof(int));
+ 	}
+
+ 	for (i = 0; i < *n_clauses; i++){
+ 		for (j = 0; j < *n_vars; j++)
+ 		{
+ 			clause_matrix[i][j] = 0;
+ 		}
+ 	}
+ 	//printf("-------clauses---------------\n");
+   	while(fgets(line, 80, fr) != NULL){
+   		start = line;
+
+   		while (sscanf(start, "%d%n", &field, &n) == 1 && field != 0) {
+   			clause_matrix[matrix_line][matrix_column] = field;
+        	//printf("%d ", clause_matrix[matrix_line][matrix_column]);
+        	start += n;
+        	matrix_column ++; 
+    	}
+    	
+    //printf("\n");
+    matrix_column= 0;	
+    matrix_line ++;
+   	}
+   	//printf("----------------------------\n" );
+
+   	fclose(fr);  
+
+   	return clause_matrix;
 }
