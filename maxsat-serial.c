@@ -33,28 +33,6 @@ V2:            (0: [- 0 0])                         (2: [- 1 0])                
 V3:  (0: [0 0 0])   (4: [1 0 0])          (2: [0 1 0])          (6: [1 1 0])        (1: [0 0 1])       (5: [1 0 1])       (3: [0 1 1])     (7: [1 1 1]) 
 
 
-=======
-															             ____Start____
-																        /             \
-															     ______/               \______
-															    /                             \
-														       /                               \
-										     _________________/                                 \_________________
-V1:								 (0: [- - 0])             				                                          (1: [- - 1])
-								  /        \                                                                       /        \
-								 /          \					                                                  /          \
-								/            \                                                                   /            \
-						  _____/              \_____                                                        ____/              \_____
-V2:	    	  (0: [- 0 0])                          (2: [- 1 0])                                (1: [- 0 1])                         (3: [- 1 1]) 
-				/    \                                /        \						         /    \                                /     \
-			   /      \			                     /          \			   				    /      \				              /       \
-			  /        \                            /            \			  				   /        \                            /         \
-			 /          \                          /              \			   				  /          \                          /           \
-V3:  (0: [0 0 0])   (4: [1 0 0])          (2: [0 1 0])          (6: [1 1 0])        (1: [0 0 1])       (5: [1 0 1])       (3: [0 1 1])     (7: [1 1 1]) 
-
-
-
->>>>>>> 8252f34e287b3b305b8e08470600db767fe37c15
 As one can see, at each level the combinations are univocal. We just need to know what the order of the last bit we have to check,
 which coincides with the variable's id.
 
@@ -70,109 +48,133 @@ FOR THIS REASON, THE FIRST VARIABLE ID IS ONE, NOT ZERO. So in the bit array, bi
 #include <math.h>
 
 
-int MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int prev_comb);
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int *cur_ass);
-void parseFile(int* n_clauses, int* n_vars, int** clause_matrix, char* filename);
-int get_bit(int decimal, int N);
-int get_cur_comb(int cur_var, int prev_comb);
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int cur_comb);
-void print_sol(int cur_sol, int n_vars);
+void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, __uint128_t prev_comb);
+int** parseFile(int* n_clauses, int* n_vars, char* filename);
+int get_bit(__uint128_t decimal, int N);
+int get_cur_comb(int cur_var, __uint128_t prev_comb);
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128_t cur_comb, int* n_clauses_unsatisfied);
+void print_sol(__uint128_t cur_sol, int n_vars);
+void free_matrix(int **clause_matrix, int n_clauses);
 
 int cur_maxsat=0;
 int n_solutions=0;
-int cur_sol=0;
+__uint128_t cur_sol=0;
 
 
-void main(){
+void main(int argc, char** argv){
+
+	if(argc!=2){
+		printf("Usage: maxsat-serial input-file.in");
+		exit(1);
+	}
+
+
 	int n_clauses, n_vars;
-	int MAXSAT;
-	int ** clause_matrix;
-
-	parseFile(&n_clauses, &n_vars, clause_matrix, "name_of_the_file.txt");
+	int **clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
 
 	MAXSAT(n_clauses, n_vars, clause_matrix,  1, 0);
-	MAXSAT(n_clauses, n_vars, clause_matrix, -1, 1);
+	MAXSAT(n_clauses, n_vars, clause_matrix, -1, 0);
 
 	
 	printf("%d %d\n", cur_maxsat, n_solutions);
-	print_sol(cur_sol);
+	print_sol(cur_sol, n_vars);
 
+
+	free_matrix(clause_matrix, n_clauses);
+	exit(0);
 }
 
 
-int MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int prev_comb){
+void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, __uint128_t prev_comb){
 	int n_clauses_satisfied;
+	int n_clauses_unsatisfied=0;
 	int next_var;
 	int tru, fal;
 
-	int cur_comb = get_cur_comb(cur_var, prev_comb); //knowing the current variable assignment and the previous combination,
-													 //get the current combination
+	__uint128_t cur_comb = get_cur_comb(cur_var, prev_comb); //knowing the current variable assignment and the previous combination,
+													         //get the current combination
 
-	if(cur_var<n_vars){ //we're not on the last variable -> we're not on a leaf
-		n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb); //calculate number of clauses satisfied by current combination
-
-		if(n_clauses - n_clauses_satisfied < cur_maxsat)
-			return 0; //no need to go further, no better solution we'll be found -> suggestion from the project sheet
+	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
+	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
+		if(n_clauses - n_clauses_unsatisfied < cur_maxsat)
+			return; //no need to go further, no better solution we'll be found -> suggestion from the project sheet
 
 		else{ //continue going down the tree
 			next_var = abs(cur_var)+1;
 
-			tru = MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
-			fal = MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
+			MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
+			MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
 			
-			if(tru>fal)
-				return tru;
-			else
-				return fal;
+			return;
 		}
 	}
 	else{ //we're in a leaf
+		
+		if(n_clauses_satisfied == cur_maxsat){ //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
+			n_solutions++;
+		}
+
 		if(n_clauses_satisfied > cur_maxsat){ //if this combination satisfies more clauses than the previous best...
 			cur_sol = cur_comb; //store the solution
 			cur_maxsat = n_clauses_satisfied; //update the best score
 			n_solutions=1;
 		}
 		
-		if(n_clauses_satisfied == cur_maxsat) //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
-			n_solutions++;	
 		
-		return n_clauses_satisfied;
+		return;
 	}
 }
 
 
 //to obtain the combination, we have to sum the bit of the new variable to the previous combination
-int get_cur_comb(int cur_var, int prev_comb){
+int get_cur_comb(int cur_var, __uint128_t prev_comb){
 
 	if(cur_var>0) //if the variable is set to true
-		return prev_comb + pow(2, abs(cur_var)-1)
+		return prev_comb + pow(2, abs(cur_var)-1);
 	else //if the variable is set to false, its corresponding bit will be 0, so the value of the next combination is equal to the previous one
-		return prev_comb
+		return prev_comb;
 }
 
 
-//for a given combination and current variable, calculate the number of clauses satisfied
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int cur_comb){
-	int i, j, n_clauses_satisfied=0;
+//for a given combination and current variable, calculate the number of clauses satisfied (and unsatisfied)
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128_t cur_comb, int* unsatisfied){
+	int i, j, k, n_clauses_satisfied=0;
+	int unsat = 0;
+	int var, bit;
 
-	for(i=0; i<n_clauses; i++) //for each clause
-		for(j=0; j<abs(cur_var); j++){ //for each variable -> each variable is a bit of cur_ass
-			
-			if(clause_matrix[i][j]!=0){ //if clause contains the variable
+	for(i=0; i<n_clauses; i++){ //for each clause
+		for(j=0, k=1; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
+			var = abs(clause_matrix[i][j]);
 
-				if( (get_bit(cur_comb,j) == 1 && clause_matrix[i][j] > 0) || (get_bit(cur_comb,j) == 0 && clause_matrix[i][j] < 0) ){ //if the variable corresponds
-					n_clauses_satisfied++;
-					break; //only one variable needs to match for the clause to be satisfied
-				}
+			if(clause_matrix[i][j]==0 || var>abs(cur_var)){ // end of clause
+				break;
 			}
+			
+			while(k<var)
+				k++;
+
+			bit = get_bit(cur_comb,k-1);
+			if( (bit == 1 && clause_matrix[i][j] > 0) || (bit == 0 && clause_matrix[i][j] < 0) ){ //if the variable corresponds
+				n_clauses_satisfied++;
+				unsat=0;
+				break; //only one variable needs to match for the clause to be satisfied
+			}
+			else
+				unsat=1;
 		}
+
+		if(unsat==1 && clause_matrix[i][j]==0){
+			*unsatisfied = *unsatisfied + 1;
+			unsat=0;
+		}
+	}
 	
 	return n_clauses_satisfied;
 }
 
 //get nth bit of an integer. the order of the first bit is 0, because it corresponds to the weight 2^0.
-int get_bit(int decimal, int N){
-	int constant = 1 << (N);
+int get_bit(__uint128_t decimal, int N){
+	__uint128_t constant = 1 << (N);
 
 	if( decimal & constant )
 		return 1;
@@ -180,13 +182,38 @@ int get_bit(int decimal, int N){
 		return 0;
 }
 
-void print_sol(int cur_sol, int n_vars);
+void print_sol(__uint128_t cur_sol, int n_vars){
 	int i;
 	for(i=0; i<n_vars; i++){
-		if(get_bit(array, i)==1)
+		if(get_bit(cur_sol, i)==1)
 			printf("%d ", i+1);
 		else
 			printf("%d ", -i-1);
 	}
 	printf("\n");
+}
+
+void free_matrix(int** clause_matrix, int n_clauses){
+	int i;
+	for(i=0; i<n_clauses; i++)
+		free(clause_matrix[i]);
+
+	free(clause_matrix);
+}
+
+int** parseFile(int* n_clauses, int* n_vars, char* filename){
+	*n_clauses = 4;
+	*n_vars = 3;
+
+	int ** clause_matrix = (int**) malloc(*n_clauses * sizeof(int*));
+	int i=0;
+	for(i=0; i<*n_clauses; i++)
+		clause_matrix[i] = (int*) malloc(20 * sizeof(int));
+
+	clause_matrix[0][0] = -1; clause_matrix[0][1] =  0; clause_matrix[0][2] =  0; clause_matrix[0][3] =  0;
+	clause_matrix[1][0] =  1; clause_matrix[1][1] =  2; clause_matrix[1][2] =  0; clause_matrix[1][3] =  0;
+	clause_matrix[2][0] = -2; clause_matrix[2][1] =  3; clause_matrix[2][2] =  0; clause_matrix[2][3] =  0;
+	clause_matrix[3][0] =  1; clause_matrix[3][1] = -2; clause_matrix[3][2] = -3; clause_matrix[3][3] =  0;
+
+	return clause_matrix;
 }
