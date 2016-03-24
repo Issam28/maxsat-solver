@@ -59,8 +59,8 @@ void main(int argc, char** argv){
 	int n_clauses, n_vars;
 	int **clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
 
-	MAXSAT(n_clauses, n_vars, clause_matrix,  1, 0);
-	MAXSAT(n_clauses, n_vars, clause_matrix, -1, 0);
+	MAXSAT(n_clauses, n_vars, clause_matrix,  1, 0); //branch with first variable set to true
+	MAXSAT(n_clauses, n_vars, clause_matrix, -1, 0); //branch with first bariable set to false
 
 	
 	printf("%d %d\n", cur_maxsat, n_solutions);
@@ -76,7 +76,6 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, __uint1
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
 	int next_var;
-	int tru, fal;
 
 	__uint128_t cur_comb = get_cur_comb(cur_var, prev_comb); //knowing the current variable assignment and the previous combination,
 													         //get the current combination
@@ -130,17 +129,13 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128
 	int var, bit;
 
 	for(i=0; i<n_clauses; i++){ //for each clause
-		for(j=0, k=1; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
+		for(j=0; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
 			var = abs(clause_matrix[i][j]);
 
-			if(clause_matrix[i][j]==0 || var>abs(cur_var)){ // end of clause
+			if(clause_matrix[i][j]==0 || var>abs(cur_var)) // end of clause
 				break;
-			}
 			
-			while(k<var)
-				k++;
-
-			bit = get_bit(cur_comb,k-1);
+			bit = get_bit(cur_comb,var-1);
 			if( (bit == 1 && clause_matrix[i][j] > 0) || (bit == 0 && clause_matrix[i][j] < 0) ){ //if the variable corresponds
 				n_clauses_satisfied++;
 				unsat=0;
