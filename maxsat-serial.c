@@ -35,18 +35,19 @@ FOR THIS REASON, THE FIRST VARIABLE ID IS ONE, NOT ZERO. So in the bit array, bi
 #include <math.h>
 
 
-void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, __uint128_t prev_comb);
+void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb);
 int** parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]);
-int get_bit(__uint128_t decimal, int N);
-int get_cur_comb(int cur_var, __uint128_t prev_comb);
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128_t cur_comb, int* n_clauses_unsatisfied);
-void print_sol(__uint128_t cur_sol, int n_vars);
+int get_bit(int* decimal, int N);
+int* get_cur_comb(int cur_var, int* prev_comb, int n_vars);
+int* get_first_comb(int n_vars);
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* n_clauses_unsatisfied);
+void print_sol(int* cur_sol, int n_vars);
 void free_matrix(int **clause_matrix, int n_clauses);
 
 int cur_maxsat=0;
 int n_solutions=0;
-__uint128_t cur_sol=0;
-
+int* cur_sol;
+int prone=0;
 
 void main(int argc, char** argv){
 
@@ -58,73 +59,89 @@ void main(int argc, char** argv){
 
 	int n_clauses, n_vars;
 	int **clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
+	int *first_comb = get_first_comb(n_vars);
 
-	MAXSAT(n_clauses, n_vars, clause_matrix,  1, 0); //branch with first variable set to true
-	MAXSAT(n_clauses, n_vars, clause_matrix, -1, 0); //branch with first bariable set to false
+	MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
+	MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
 
+	free(first_comb);
 	
 	printf("%d %d\n", cur_maxsat, n_solutions);
 	print_sol(cur_sol, n_vars);
 
 
 	free_matrix(clause_matrix, n_clauses);
+	free(cur_sol);
 	exit(0);
 }
 
-
-void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, __uint128_t prev_comb){
+//TODO: Cada branch ter o seu vector de clauses satisfeitas???
+void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb){
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
 	int next_var;
 
-	__uint128_t cur_comb = get_cur_comb(cur_var, prev_comb); //knowing the current variable assignment and the previous combination,
+	int* cur_comb = get_cur_comb(cur_var, prev_comb, n_vars); //knowing the current variable assignment and the previous combination,
 													         //get the current combination
 
+
+	//printf("%f\r", (++prone*100)/pow(2,n_vars) );
 	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
-		if(n_clauses - n_clauses_unsatisfied < cur_maxsat)
-			return; //no need to go further, no better solution we'll be found -> suggestion from the project sheet
 
+		if(n_clauses - n_clauses_unsatisfied < cur_maxsat){} //no need to go further, no better solution we'll be found -> suggestion from the project sheet
 		else{ //continue going down the tree
 			next_var = abs(cur_var)+1;
 
 			MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
 			MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
-			
-			return;
 		}
+		free(cur_comb);
+		return;
 	}
 	else{ //we're in a leaf
 		
-		if(n_clauses_satisfied == cur_maxsat){ //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
+		if(n_clauses_satisfied == cur_maxsat) //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
 			n_solutions++;
+		else{
+			if(n_clauses_satisfied > cur_maxsat){ //if this combination satisfies more clauses than the previous best...
+				cur_sol = cur_comb; //store the solution
+				cur_maxsat = n_clauses_satisfied; //update the best score
+				n_solutions=1;
+				return;
+			}
 		}
-
-		if(n_clauses_satisfied > cur_maxsat){ //if this combination satisfies more clauses than the previous best...
-			cur_sol = cur_comb; //store the solution
-			cur_maxsat = n_clauses_satisfied; //update the best score
-			n_solutions=1;
-		}
-		
-		
-		return;
+		free(cur_comb);
 	}
 }
 
+int* get_first_comb(int n_vars){
+	int* first_comb = (int *) malloc(n_vars*sizeof(int));
+	int i;
 
-//to obtain the combination, we have to sum the bit of the new variable to the previous combination
-int get_cur_comb(int cur_var, __uint128_t prev_comb){
+	for(i=0; i<n_vars; i++)
+		first_comb[i]=0;
 
-	if(cur_var>0) //if the variable is set to true
-		return prev_comb + pow(2, abs(cur_var)-1);
-	else //if the variable is set to false, its corresponding bit will be 0, so the value of the next combination is equal to the previous one
-		return prev_comb;
+	return first_comb;
 }
 
 
+//to obtain the combination, we copy the previous combination and assign the current variable accordingly
+int* get_cur_comb(int cur_var, int* prev_comb, int n_vars){
+	int* cur_comb = (int *) malloc(n_vars*sizeof(int));
+	int i;
+
+	for(i=0; i<n_vars; i++)
+		cur_comb[i]=prev_comb[i];
+
+	cur_comb[abs(cur_var)-1]=cur_var;
+
+	return cur_comb;
+}
+
 //for a given combination and current variable, calculate the number of clauses satisfied (and unsatisfied)
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128_t cur_comb, int* unsatisfied){
-	int i, j, k, n_clauses_satisfied=0;
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* unsatisfied){
+	int i, j, n_clauses_satisfied=0;
 	int unsat = 0;
 	int var, bit;
 
@@ -132,11 +149,10 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128
 		for(j=0; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
 			var = abs(clause_matrix[i][j]);
 
-			if(clause_matrix[i][j]==0 || var>abs(cur_var)) // end of clause
+			if(var==0 || var>abs(cur_var)) // end of clause or we don't know the next variable assignments
 				break;
 			
-			bit = get_bit(cur_comb,var-1);
-			if( (bit == 1 && clause_matrix[i][j] > 0) || (bit == 0 && clause_matrix[i][j] < 0) ){ //if the variable corresponds
+			if(cur_comb[var-1] == clause_matrix[i][j]){ //if the variable corresponds
 				n_clauses_satisfied++;
 				unsat=0;
 				break; //only one variable needs to match for the clause to be satisfied
@@ -154,24 +170,11 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, __uint128
 	return n_clauses_satisfied;
 }
 
-//get nth bit of an integer. the order of the first bit is 0, because it corresponds to the weight 2^0.
-int get_bit(__uint128_t decimal, int N){
-	__uint128_t constant = 1 << (N);
-
-	if( decimal & constant )
-		return 1;
-	else
-		return 0;
-}
-
-void print_sol(__uint128_t cur_sol, int n_vars){
+void print_sol(int* cur_sol, int n_vars){
 	int i;
-	for(i=0; i<n_vars; i++){
-		if(get_bit(cur_sol, i)==1)
-			printf("%d ", i+1);
-		else
-			printf("%d ", -i-1);
-	}
+	for(i=0; i<n_vars; i++)
+		printf("%d ", cur_sol[i]);
+	
 	printf("\n");
 }
 
