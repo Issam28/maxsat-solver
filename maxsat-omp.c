@@ -1,35 +1,3 @@
-/*
-BRIEF EXPLANATION OF NOTATION Every:
-USED variable can be either 0 or 1. So a combination of variable assignments can be described by a bit vector.
-And a bit vector can also describe an Integer. Hence, combinations of variable assignments can be described by ints.
-Since we're going down a binary tree and looking variable by variable, we have to keep track of which variable we're looking at,
-so that we change/evaluate the appropriate bit.
-An example with 3 variables: (V_3 V_2 V_1)
-<<<<<<< HEAD
-                                                                         ____Start____
-                                                                        /             \
-                                                                 ______/               \______
-                                                                /                             \
-                                                               /                               \
-                                             _________________/                                 \_________________
-V1:                              (0: [- - 0])                                                                     (1: [- - 1])
-                                  /        \                                                                       /        \
-                                 /          \                                                                     /          \
-                                /            \                                                                   /            \
-                          _____/              \_____                                                        ____/              \_____
-V2:            (0: [- 0 0])                         (2: [- 1 0])                                (1: [- 0 1])                         (3: [- 1 1]) 
-                /    \                                /        \                                 /    \                                /     \
-               /      \                              /          \                               /      \                              /       \
-              /        \                            /            \                             /        \                            /         \
-             /          \                          /              \                           /          \                          /           \
-V3:  (0: [0 0 0])   (4: [1 0 0])          (2: [0 1 0])          (6: [1 1 0])        (1: [0 0 1])       (5: [1 0 1])       (3: [0 1 1])     (7: [1 1 1]) 
-As one can see, at each level the combinations are univocal. We just need to know what the order of the last bit we have to check,
-which coincides with the variable's id.
-As stated in the assignment, each variable is represented by an integer, whose absolute value is the variable's id. If the value is positive,
-the variable is set to True, else it is set to Negative. Example: -3 means V_3 -> False. 
-FOR THIS REASON, THE FIRST VARIABLE ID IS ONE, NOT ZERO. So in the bit array, bit_x refers to variable_(x+1).
-*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -44,10 +12,18 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 void print_sol(int* cur_sol, int n_vars);
 void free_matrix(int **clause_matrix, int n_clauses);
 
+
+// TOOD: handle concurrent access to global variables
 int cur_maxsat=0;
 int n_solutions=0;
 int* cur_sol;
-int prone=0;
+
+
+// TODO: implement global variables to keep track of the most recent node being processed.
+//		-> If we want to do BFS, then we jump to one of the children of that node
+//		-> If we want to do DFS, then we jump to the brother of that node
+
+
 
 void main(int argc, char** argv){
 
@@ -75,24 +51,31 @@ void main(int argc, char** argv){
 	exit(0);
 }
 
-//TODO: Cada branch ter o seu vector de clauses satisfeitas???
+//TODO: Learn how to associate branches with threads, to make sure the same branch isn't processed twice, for instance when an idle thread takes work previously associated with a busy thread
 void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb){
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
 	int next_var;
 
-	int* cur_comb = get_cur_comb(cur_var, prev_comb, n_vars); //knowing the current variable assignment and the previous combination,
-													         //get the current combination
+	int* cur_comb = get_cur_comb(cur_var, prev_comb, n_vars); // knowing the current variable assignment and the previous combination,
+													          // get the current combination
 
 
-	//printf("%f\r", (++prone*100)/pow(2,n_vars) );
 	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
 
-		if(n_clauses - n_clauses_unsatisfied < cur_maxsat){} //no need to go further, no better solution we'll be found -> suggestion from the project sheet
-		else{ //continue going down the tree
-			next_var = abs(cur_var)+1;
 
+		//If the condition isn't met, there's no need to go further on this, no better solution we'll be found -> suggestion from the project sheet	
+		// TODO: In that case this thread is available to process other branch -> take it to the correct branch.
+		
+		if(!(n_clauses - n_clauses_unsatisfied < cur_maxsat) ){
+			//continue going down the tree
+			next_var = abs(cur_var)+1;
+			
+			// TODO: Some logic here to understand if the children are already being processed by some other thread.
+			//		 If so, this thread is available to process other branch -> take it to the correct branch.
+			//
+			
 			MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
 			MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
 		}
@@ -114,6 +97,33 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 		free(cur_comb);
 	}
 }
+
+
+
+
+
+
+
+
+
+
+// ##################################################################################################################################
+// ##################################################################################################################################
+// ##################################################################################################################################
+// ##################################################################################################################################
+// ##################################################################################################################################
+// ##################################################################################################################################
+// ##################################################################################################################################
+
+
+// Utility functions down there
+
+
+
+
+
+
+
 
 int* get_first_comb(int n_vars){
 	int* first_comb = (int *) malloc(n_vars*sizeof(int));

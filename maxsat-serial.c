@@ -1,35 +1,3 @@
-/*
-BRIEF EXPLANATION OF NOTATION Every:
-USED variable can be either 0 or 1. So a combination of variable assignments can be described by a bit vector.
-And a bit vector can also describe an Integer. Hence, combinations of variable assignments can be described by ints.
-Since we're going down a binary tree and looking variable by variable, we have to keep track of which variable we're looking at,
-so that we change/evaluate the appropriate bit.
-An example with 3 variables: (V_3 V_2 V_1)
-<<<<<<< HEAD
-                                                                         ____Start____
-                                                                        /             \
-                                                                 ______/               \______
-                                                                /                             \
-                                                               /                               \
-                                             _________________/                                 \_________________
-V1:                              (0: [- - 0])                                                                     (1: [- - 1])
-                                  /        \                                                                       /        \
-                                 /          \                                                                     /          \
-                                /            \                                                                   /            \
-                          _____/              \_____                                                        ____/              \_____
-V2:            (0: [- 0 0])                         (2: [- 1 0])                                (1: [- 0 1])                         (3: [- 1 1]) 
-                /    \                                /        \                                 /    \                                /     \
-               /      \                              /          \                               /      \                              /       \
-              /        \                            /            \                             /        \                            /         \
-             /          \                          /              \                           /          \                          /           \
-V3:  (0: [0 0 0])   (4: [1 0 0])          (2: [0 1 0])          (6: [1 1 0])        (1: [0 0 1])       (5: [1 0 1])       (3: [0 1 1])     (7: [1 1 1]) 
-As one can see, at each level the combinations are univocal. We just need to know what the order of the last bit we have to check,
-which coincides with the variable's id.
-As stated in the assignment, each variable is represented by an integer, whose absolute value is the variable's id. If the value is positive,
-the variable is set to True, else it is set to Negative. Example: -3 means V_3 -> False. 
-FOR THIS REASON, THE FIRST VARIABLE ID IS ONE, NOT ZERO. So in the bit array, bit_x refers to variable_(x+1).
-*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -47,7 +15,6 @@ void free_matrix(int **clause_matrix, int n_clauses);
 int cur_maxsat=0;
 int n_solutions=0;
 int* cur_sol;
-int prone=0;
 
 void main(int argc, char** argv){
 
