@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <omp.h>
 
 
 void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb);
@@ -17,6 +18,7 @@ void free_matrix(int **clause_matrix, int n_clauses);
 int cur_maxsat=0;
 int n_solutions=0;
 int* cur_sol;
+omp_lock_t writelock;
 
 
 // TODO: implement global variables to keep track of the most recent node being processed.
@@ -37,8 +39,24 @@ void main(int argc, char** argv){
 	int **clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
 	int *first_comb = get_first_comb(n_vars);
 
-	MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
-	MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
+	omp_init_lock(&writelock);
+
+	#pragma omp parallel
+	{
+		#pragma omp single
+		{	
+			#pragma omp task
+			{
+				MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
+			}
+			#pragma omp task
+			{
+				MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
+			}
+			#pragma taskwait
+		}
+	}
+
 
 	free(first_comb);
 	
@@ -75,24 +93,34 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 			// TODO: Some logic here to understand if the children are already being processed by some other thread.
 			//		 If so, this thread is available to process other branch -> take it to the correct branch.
 			//
-			
-			MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
-			MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
+			#pragma omp task
+			{
+				MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
+			}
+			#pragma omp task
+			{
+				MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
+			}
+			#pragma taskwait
 		}
 		free(cur_comb);
 		return;
 	}
 	else{ //we're in a leaf
-		
-		if(n_clauses_satisfied == cur_maxsat) //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
+		omp_set_lock(&writelock);
+		if(n_clauses_satisfied == cur_maxsat){ //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
+			omp_unset_lock(&writelock);
 			n_solutions++;
+		}
 		else{
 			if(n_clauses_satisfied > cur_maxsat){ //if this combination satisfies more clauses than the previous best...
 				cur_sol = cur_comb; //store the solution
 				cur_maxsat = n_clauses_satisfied; //update the best score
 				n_solutions=1;
+				omp_unset_lock(&writelock);
 				return;
 			}
+			omp_unset_lock(&writelock);
 		}
 		free(cur_comb);
 	}
