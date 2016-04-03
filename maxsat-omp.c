@@ -18,7 +18,6 @@ void free_matrix(int **clause_matrix, int n_clauses);
 int cur_maxsat=0;
 int n_solutions=0;
 int* cur_sol;
-omp_lock_t writelock;
 
 
 // TODO: implement global variables to keep track of the most recent node being processed.
@@ -39,13 +38,11 @@ void main(int argc, char** argv){
 	int **clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
 	int *first_comb = get_first_comb(n_vars);
 
-	omp_init_lock(&writelock);
-
 	#pragma omp parallel
 	{
-		#pragma omp single
+		#pragma omp single nowait
 		{	
-			#pragma omp task
+			#pragma omp task 
 			{
 				MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
 			}
@@ -58,8 +55,6 @@ void main(int argc, char** argv){
 	}
 
 
-	free(first_comb);
-	
 	printf("%d %d\n", cur_maxsat, n_solutions);
 	print_sol(cur_sol, n_vars);
 
@@ -69,15 +64,20 @@ void main(int argc, char** argv){
 	exit(0);
 }
 
+
+
+
 //TODO: Learn how to associate branches with threads, to make sure the same branch isn't processed twice, for instance when an idle thread takes work previously associated with a busy thread
 void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb){
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
 	int next_var;
+	int to_free=0;
 
 	int* cur_comb = get_cur_comb(cur_var, prev_comb, n_vars); // knowing the current variable assignment and the previous combination,
 													          // get the current combination
 
+	//printf("%d (%d)\n", cur_var, omp_get_thread_num() ); fflush(stdout);
 
 	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
@@ -85,49 +85,58 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 
 		//If the condition isn't met, there's no need to go further on this, no better solution we'll be found -> suggestion from the project sheet	
 		// TODO: In that case this thread is available to process other branch -> take it to the correct branch.
-		
-		if(!(n_clauses - n_clauses_unsatisfied < cur_maxsat) ){
+		if(0){//n_clauses - n_clauses_unsatisfied < cur_maxsat){ //no need to go further, no better solution we'll be found -> suggestion from the project sheet
+			free(cur_comb);
+		}
+		else{
 			//continue going down the tree
 			next_var = abs(cur_var)+1;
 			
 			// TODO: Some logic here to understand if the children are already being processed by some other thread.
 			//		 If so, this thread is available to process other branch -> take it to the correct branch.
 			//
-			#pragma omp task
-			{
+			//#pragma omp task
+			//{
 				MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
-			}
-			#pragma omp task
+			//}
+			#pragma omp task 
 			{
 				MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
 			}
 			#pragma taskwait
+			
 		}
-		free(cur_comb);
 		return;
 	}
 	else{ //we're in a leaf
-		omp_set_lock(&writelock);
-		if(n_clauses_satisfied == cur_maxsat){ //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
-			omp_unset_lock(&writelock);
-			n_solutions++;
-		}
-		else{
-			if(n_clauses_satisfied > cur_maxsat){ //if this combination satisfies more clauses than the previous best...
-				cur_sol = cur_comb; //store the solution
-				cur_maxsat = n_clauses_satisfied; //update the best score
-				n_solutions=1;
-				omp_unset_lock(&writelock);
-				return;
+		#pragma omp critical
+		{
+			if(n_clauses_satisfied == cur_maxsat){ //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
+				n_solutions++;
+				//print_sol(cur_comb,n_vars);
+				//printf("%d (%d)\n\n", n_solutions, omp_get_thread_num() ); fflush(stdout);
+				free(cur_comb);
 			}
-			omp_unset_lock(&writelock);
+			else{
+				if(n_clauses_satisfied > cur_maxsat){ //if this combination satisfies more clauses than the previous best...
+					cur_sol = cur_comb; //store the solution
+					cur_maxsat = n_clauses_satisfied; //update the best score
+					n_solutions=1;
+					//print_sol(cur_comb,n_vars);
+					//printf("%d (%d)\n\n", n_solutions, omp_get_thread_num() ); fflush(stdout);
+				}
+				else
+					to_free=1;
+			}
 		}
-		free(cur_comb);
+		if(to_free)
+			free(cur_comb);
+
+		return;
 	}
+
+
 }
-
-
-
 
 
 
@@ -164,13 +173,18 @@ int* get_first_comb(int n_vars){
 }
 
 
-//to obtain the combination, we copy the previous combination and assign the current variable accordingly
+//to obtain the combination, we copy the previous combination and assign the current variable accordingly. actually we only copy half of the time. half of the children reuse the parent's array, the other's copy it.
 int* get_cur_comb(int cur_var, int* prev_comb, int n_vars){
-	int* cur_comb = (int *) malloc(n_vars*sizeof(int));
+	int* cur_comb;
 	int i;
 
-	for(i=0; i<n_vars; i++)
-		cur_comb[i]=prev_comb[i];
+	if(cur_var<0)
+		cur_comb = prev_comb;
+	else{
+		cur_comb = (int *) malloc(n_vars*sizeof(int));
+		for(i=0; i<n_vars; i++)
+			cur_comb[i]=prev_comb[i];
+	}
 
 	cur_comb[abs(cur_var)-1]=cur_var;
 
@@ -210,8 +224,10 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 
 void print_sol(int* cur_sol, int n_vars){
 	int i;
-	for(i=0; i<n_vars; i++)
+	for(i=0; i<n_vars; i++){
 		printf("%d ", cur_sol[i]);
+		fflush(stdout);
+	}
 	
 	printf("\n");
 }
@@ -245,11 +261,11 @@ int **parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]){
     clause_matrix = (int**)malloc( *n_clauses * sizeof( int* ));
 
     for (i = 0; i < *n_clauses; i++){
-    	clause_matrix[i] = (int *)malloc(*n_vars * sizeof(int));
+    	clause_matrix[i] = (int *)malloc(20 * sizeof(int));
  	}
 
  	for (i = 0; i < *n_clauses; i++){
- 		for (j = 0; j < *n_vars; j++)
+ 		for (j = 0; j < 20; j++)
  		{
  			clause_matrix[i][j] = 0;
  		}

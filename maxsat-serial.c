@@ -31,7 +31,7 @@ void main(int argc, char** argv){
 	MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
 	MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
 
-	free(first_comb);
+//	free(first_comb);
 	
 	printf("%d %d\n", cur_maxsat, n_solutions);
 	print_sol(cur_sol, n_vars);
@@ -56,14 +56,16 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
 
-		if(n_clauses - n_clauses_unsatisfied < cur_maxsat){} //no need to go further, no better solution we'll be found -> suggestion from the project sheet
+		if(n_clauses - n_clauses_unsatisfied < cur_maxsat){ //no need to go further, no better solution we'll be found -> suggestion from the project sheet
+			free(cur_comb);
+		}
 		else{ //continue going down the tree
 			next_var = abs(cur_var)+1;
 
 			MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
 			MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
 		}
-		free(cur_comb);
+		
 		return;
 	}
 	else{ //we're in a leaf
@@ -93,13 +95,18 @@ int* get_first_comb(int n_vars){
 }
 
 
-//to obtain the combination, we copy the previous combination and assign the current variable accordingly
+//to obtain the combination, we copy the previous combination and assign the current variable accordingly. actually we only copy half of the time. half of the children reuse the parent's array, the other's copy it.
 int* get_cur_comb(int cur_var, int* prev_comb, int n_vars){
-	int* cur_comb = (int *) malloc(n_vars*sizeof(int));
+	int* cur_comb;
 	int i;
 
-	for(i=0; i<n_vars; i++)
-		cur_comb[i]=prev_comb[i];
+	if(cur_var<0)
+		cur_comb = prev_comb;
+	else{
+		cur_comb = (int *) malloc(n_vars*sizeof(int));
+		for(i=0; i<n_vars; i++)
+			cur_comb[i]=prev_comb[i];
+	}
 
 	cur_comb[abs(cur_var)-1]=cur_var;
 
@@ -174,11 +181,11 @@ int **parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]){
     clause_matrix = (int**)malloc( *n_clauses * sizeof( int* ));
 
     for (i = 0; i < *n_clauses; i++){
-    	clause_matrix[i] = (int *)malloc(*n_vars * sizeof(int));
+    	clause_matrix[i] = (int *)malloc(20 * sizeof(int));
  	}
 
  	for (i = 0; i < *n_clauses; i++){
- 		for (j = 0; j < *n_vars; j++)
+ 		for (j = 0; j < 20; j++)
  		{
  			clause_matrix[i][j] = 0;
  		}
