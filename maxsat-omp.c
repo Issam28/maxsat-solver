@@ -12,12 +12,17 @@ int* get_first_comb(int n_vars);
 int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* n_clauses_unsatisfied);
 void print_sol(int* cur_sol, int n_vars);
 void free_matrix(int **clause_matrix, int n_clauses);
+int on_same_branch(int* comb1, int* comb2, int cur_var);
+int get_last_var_on_comb(int* comb, int n_vars);
+int copy_array(int* dest, int* src, int n_vars);
+int cmp_array(int* comb1, int* comb2, int up_until);
 
 
 // TOOD: handle concurrent access to global variables
 int cur_maxsat=0;
 int n_solutions=0;
 int* cur_sol;
+int* last_seen;
 
 
 // TODO: implement global variables to keep track of the most recent node being processed.
@@ -37,22 +42,24 @@ void main(int argc, char** argv){
 	int n_clauses, n_vars;
 	int **clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
 	int *first_comb = get_first_comb(n_vars);
+	last_seen = get_first_comb(n_vars);
 
 	#pragma omp parallel
-	{
-		#pragma omp single nowait
-		{	
-			#pragma omp task 
-			{
-				MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
-			}
-			#pragma omp task
-			{
-				MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
-			}
-			#pragma taskwait
+	{		
+		#pragma omp single
+		{
+			MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
+		}			
+		#pragma omp single
+		//#pragma omp task
+		{
+			MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
 		}
-	}
+		//#pragma taskwait
+		}
+	//}
+
+	
 
 
 	printf("%d %d\n", cur_maxsat, n_solutions);
@@ -73,10 +80,41 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 	int n_clauses_unsatisfied=0;
 	int next_var;
 	int to_free=0;
-
+	int out=0;
+	int * prev_comb2;
+	int n;
 	int* cur_comb = get_cur_comb(cur_var, prev_comb, n_vars); // knowing the current variable assignment and the previous combination,
 													          // get the current combination
 
+
+	if(cur_var==0){
+		cur_var = - get_last_var_on_comb(prev_comb, n_vars);
+	}
+
+	#pragma omp critical
+	{
+		n = get_last_var_on_comb(last_seen,n_vars);
+
+		if(abs(n) < abs(cur_var) ){
+			copy_array(last_seen, cur_comb, n_vars); //this is the last seen
+			printf("\nupdated last seen. %d %d\n", n, cur_var); fflush(stdout);
+		}else{
+			if(cmp_array(last_seen, cur_comb, abs(cur_var))){ //node is already being processed -> call sibling of last_seen
+				prev_comb2 = malloc(n_vars*sizeof(int));
+				copy_array(prev_comb2, last_seen, n_vars);
+				
+				prev_comb2[abs(cur_var)]=0;
+				out=1;
+			}
+		}
+	}
+
+//DEAD FUCKING LOCK
+	if(out){
+		printf("Fuck you %d.\n", cur_var);
+		MAXSAT(n_clauses, n_vars, clause_matrix, -cur_var, prev_comb2);
+		return;
+	}
 	//printf("%d (%d)\n", cur_var, omp_get_thread_num() ); fflush(stdout);
 
 	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
@@ -85,8 +123,15 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 
 		//If the condition isn't met, there's no need to go further on this, no better solution we'll be found -> suggestion from the project sheet	
 		// TODO: In that case this thread is available to process other branch -> take it to the correct branch.
-		if(0){//n_clauses - n_clauses_unsatisfied < cur_maxsat){ //no need to go further, no better solution we'll be found -> suggestion from the project sheet
+		if(n_clauses - n_clauses_unsatisfied < cur_maxsat){ //no need to go further, no better solution we'll be found -> suggestion from the project sheet
 			free(cur_comb);
+			int* prev_comb2 = malloc(n_vars*sizeof(int));
+			
+			copy_array(prev_comb2, last_seen, n_vars);
+				
+			prev_comb2[abs(cur_var)]=0;
+
+			MAXSAT(n_clauses, n_vars, clause_matrix, 0, prev_comb2);
 		}
 		else{
 			//continue going down the tree
@@ -95,15 +140,16 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 			// TODO: Some logic here to understand if the children are already being processed by some other thread.
 			//		 If so, this thread is available to process other branch -> take it to the correct branch.
 			//
-			//#pragma omp task
-			//{
+		
 				MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
-			//}
+			
+			//#pragma omp single
 			#pragma omp task 
 			{
 				MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
 			}
-			#pragma taskwait
+		
+	//		#pragma taskwait
 			
 		}
 		return;
@@ -113,8 +159,8 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 		{
 			if(n_clauses_satisfied == cur_maxsat){ //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
 				n_solutions++;
-				//print_sol(cur_comb,n_vars);
-				//printf("%d (%d)\n\n", n_solutions, omp_get_thread_num() ); fflush(stdout);
+				print_sol(cur_comb,n_vars);
+				printf("%d (%d)\n\n", n_solutions, omp_get_thread_num() ); fflush(stdout);
 				free(cur_comb);
 			}
 			else{
@@ -122,8 +168,8 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 					cur_sol = cur_comb; //store the solution
 					cur_maxsat = n_clauses_satisfied; //update the best score
 					n_solutions=1;
-					//print_sol(cur_comb,n_vars);
-					//printf("%d (%d)\n\n", n_solutions, omp_get_thread_num() ); fflush(stdout);
+					print_sol(cur_comb,n_vars);
+					printf("%d (%d)\n\n", n_solutions, omp_get_thread_num() ); fflush(stdout);
 				}
 				else
 					to_free=1;
@@ -144,6 +190,11 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 
 
 
+
+
+
+
+
 // ##################################################################################################################################
 // ##################################################################################################################################
 // ##################################################################################################################################
@@ -151,14 +202,47 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 // ##################################################################################################################################
 // ##################################################################################################################################
 // ##################################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // Utility functions down there
 
+int get_last_var_on_comb(int* comb, int n_vars){
+	for(int i=0; i<n_vars; i++)
+		if(comb[i]==0)
+			return i;
+}
 
+int cmp_array(int* comb1, int* comb2, int up_until){
+	
+	for(int i=0; i<up_until; i++)
+		if(comb1[i]!=comb2[i])
+			return 0;
+	
+	return 1;
+}
 
+int copy_array(int* dest, int* src, int n_vars){
+	for(int i=0; i<n_vars; i++){
+		if(src[i]==0)
+			break;
 
-
+		dest[i]=src[i];
+	}
+}
 
 
 
@@ -197,6 +281,7 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 	int unsat = 0;
 	int var, bit;
 
+#pragma omp parallel for
 	for(i=0; i<n_clauses; i++){ //for each clause
 		for(j=0; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
 			var = abs(clause_matrix[i][j]);
@@ -205,7 +290,9 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 				break;
 			
 			if(cur_comb[var-1] == clause_matrix[i][j]){ //if the variable corresponds
-				n_clauses_satisfied++;
+				#pragma omp atomic
+					n_clauses_satisfied++;
+				
 				unsat=0;
 				break; //only one variable needs to match for the clause to be satisfied
 			}
@@ -214,7 +301,9 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 		}
 
 		if(unsat==1 && clause_matrix[i][j]==0){
-			*unsatisfied = *unsatisfied + 1;
+			#pragma omp atomic write
+				*unsatisfied = *unsatisfied + 1;
+			
 			unsat=0;
 		}
 	}
