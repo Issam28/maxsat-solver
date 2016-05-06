@@ -94,7 +94,7 @@ int masterProc(int argc, char** argv ){
           n_solutions=n_solutions+temp_n_sols;
         }else{
           if(temp_maxsat>cur_maxsat){
-            printf("slave %d has a better solution.\n", i);
+//          printf("slave %d has a better solution.\n", i);
             code=1; //signal slave to send the number of solutions and one example solution
             MPI_Send(&code, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
             MPI_Recv(&temp_n_sols, 1, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
