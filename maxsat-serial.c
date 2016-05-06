@@ -32,7 +32,7 @@ void main(int argc, char** argv){
 	MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
 
 //	free(first_comb);
-	
+
 	printf("%d %d\n", cur_maxsat, n_solutions);
 	print_sol(cur_sol, n_vars);
 
@@ -42,7 +42,7 @@ void main(int argc, char** argv){
 	exit(0);
 }
 
-//TODO: Cada branch ter o seu vector de clauses satisfeitas???
+
 void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb){
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
@@ -68,7 +68,7 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 		return;
 	}
 	else{ //we're in a leaf
-		
+
 		if(n_clauses_satisfied == cur_maxsat) //if this combination satisfies the same number of clauses as the current best, increase the number of solutions
 			n_solutions++;
 		else{
@@ -124,7 +124,7 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 
 			if(var==0 || var>abs(cur_var)) // end of clause or we don't know the next variable assignments
 				break;
-			
+
 			if(cur_comb[var-1] == clause_matrix[i][j]){ //if the variable corresponds
 				n_clauses_satisfied++;
 				unsat=0;
@@ -139,7 +139,7 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 			unsat=0;
 		}
 	}
-	
+
 	return n_clauses_satisfied;
 }
 
@@ -147,7 +147,7 @@ void print_sol(int* cur_sol, int n_vars){
 	int i;
 	for(i=0; i<n_vars; i++)
 		printf("%d ", cur_sol[i]);
-	
+
 	printf("\n");
 }
 
@@ -169,7 +169,7 @@ int **parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]){
 	char *start;
 	int ** clause_matrix;
    	fr = fopen (name_of_the_file, "rt");  /* open the file for reading */
-   	
+
    	/*Read n_vars and n_clauses*/
 	fgets(line,80,fr);
 	sscanf(line, "%d" "%d", n_vars, n_clauses);
@@ -197,16 +197,16 @@ int **parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]){
    			clause_matrix[matrix_line][matrix_column] = field;
         	//printf("%d ", clause_matrix[matrix_line][matrix_column]);
         	start += n;
-        	matrix_column ++; 
+        	matrix_column ++;
     	}
-    	
+
     //printf("\n");
-    matrix_column= 0;	
+    matrix_column= 0;
     matrix_line ++;
    	}
    	//printf("----------------------------\n" );
 
-   	fclose(fr);  
+   	fclose(fr);
 
    	return clause_matrix;
 }

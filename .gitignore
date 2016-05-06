@@ -1,5 +1,7 @@
+*.pdf
 maxsat-serial-arrays
 maxsat-instances
 old-approach
 maxsat-serial
 maxsat-omp
+maxsat-mpi

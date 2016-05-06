@@ -6,7 +6,6 @@
 
 void MAXSAT(int cur_var, int* prev_comb, int root);
 int** parseFile(char name_of_the_file[40]);
-int get_bit(int* decimal, int N);
 int* get_cur_comb(int cur_var, int* prev_comb);
 int* get_first_comb();
 int clauses_satisfied(int cur_var, int* cur_comb, int* n_clauses_unsatisfied);
@@ -28,9 +27,9 @@ int** clause_matrix;		//matrix with all the clauses to be tested
 int main(int argc, char** argv){
 
 	n_threads = omp_get_max_threads();
-	
+
 	if(argc!=2){
-		printf("Usage: maxsat-serial input-file.in");
+		printf("Usage: maxsat-omp input-file.in");
 		exit(1);
 	}
 
@@ -43,24 +42,24 @@ int main(int argc, char** argv){
 	//allocate needed arrays
 	int *first_comb = get_first_comb(n_vars);
 	first_comb[0]=1;
-	
+
 	int *first_comb2 = get_first_comb(n_vars);
 	first_comb2[0]=-1;
-	
+
 	cur_sol = get_first_comb(n_vars);
-	
+
 
 	//root node of the binary tree.
 	#pragma omp parallel
 	{
 		#pragma omp single nowait
 		{
-			//here the two children nodes are spawned. if there are avaiable threads, a task is created. 
+			//here the two children nodes are spawned. if there are avaiable threads, a task is created.
 			//otherwise, this thread will process both nodes
-			if(are_there_idle_threads()){ 
+			if(are_there_idle_threads()){
 				#pragma omp task
 				{
-					MAXSAT(-1, first_comb2, 1); //branch with first bariable set to false
+					MAXSAT(-1, first_comb2, 1); //branch with first variable set to false
 				}
 			}
 			else{
@@ -72,7 +71,7 @@ int main(int argc, char** argv){
 	}
 
 	free(thread_status);
-	
+
 
 	printf("%d %d\n", cur_maxsat, n_solutions);
 	print_sol(cur_sol, n_vars);
@@ -90,7 +89,7 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 	int tid = omp_get_thread_num();
 	int* next_comb;
 	int* next_comb2;
-	
+
 	n_clauses_satisfied = clauses_satisfied(cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
 
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
@@ -111,10 +110,10 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 			next_comb2 = get_cur_comb(next_var, cur_comb);
 
 
-			//here the two children nodes are spawned. if there are avaiable threads, a task is created. 
+			//here the two children nodes are spawned. if there are avaiable threads, a task is created.
 			//otherwise, this thread will process both nodes
 			if(are_there_idle_threads()){
-				#pragma omp task 
+				#pragma omp task
 				{
 				MAXSAT(-next_var, next_comb, 1); //branch with next var set to false and "root" set to true.
 												 //this means the thread will return up until here and then become idle again.
@@ -122,11 +121,11 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 			}
 			else
 				MAXSAT(-next_var, next_comb, 0); //branch with next var set to false
-			
+
 
 			MAXSAT(next_var, next_comb2, 0); //branch with next var set to true
 
-						
+
 			if(root){ //if this is a root node, the thread becomes idle here. otherwise, it still has to return until its root node
 				#pragma atomic write
 					thread_status[tid]=0;
@@ -150,7 +149,7 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 				}
 			}
 		}
-		
+
 		if(root){ //if this is a root node, the thread becomes idle here. otherwise, it still has to return until its root node
 			#pragma atomic write
 				thread_status[tid]=0;
@@ -198,18 +197,18 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 
 
 int are_there_idle_threads(){
-	
+
 	for(int i=0; i<n_threads; i++)
 		if(thread_status[i]==0)
 			return 1;
 
-	return 0;	
+	return 0;
 }
 
 void copy_array(int* dest, int* src){
 	for(int i=0; i<n_vars; i++){
 		if(src[i]==0)
-		 	break;				
+		 	break;
 
 		dest[i]=src[i];
 	}
@@ -231,9 +230,9 @@ int* get_first_comb(){
 //to obtain the combination, we copy the previous combination and assign the current variable accordingly. actually we only copy half of the time. half of the children reuse the parent's array, the other's copy it.
 int* get_cur_comb(int cur_var, int* prev_comb){
 	int* cur_comb;
-	
+
 	cur_comb = (int *) malloc(n_vars*sizeof(int));
-	
+
 	copy_array(cur_comb, prev_comb);
 
 	cur_comb[abs(cur_var)-1]=cur_var;
@@ -254,9 +253,9 @@ int clauses_satisfied(int cur_var, int* cur_comb, int* unsatisfied){
 
 			if(var==0 || var>abs(cur_var)) // end of clause or we don't know the next variable assignments
 				break;
-			
+
 			if(cur_comb[var-1] == clause_matrix[i][j]){ //if the variable corresponds
-				n_clauses_satisfied++;		
+				n_clauses_satisfied++;
 				unsat=0;
 				break; //only one variable needs to match for the clause to be satisfied
 			}
@@ -278,7 +277,7 @@ void print_sol(){
 		printf("%d ", cur_sol[i]);
 		fflush(stdout);
 	}
-	
+
 	printf("\n");
 }
 
@@ -299,7 +298,7 @@ int **parseFile(char name_of_the_file[40]){
 	char *start;
 	int ** clause_matrix;
    	fr = fopen (name_of_the_file, "rt");  /* open the file for reading */
-   	
+
    	/*Read n_vars and n_clauses*/
 	fgets(line,80,fr);
 	sscanf(line, "%d" "%d", &n_vars, &n_clauses);
@@ -327,16 +326,16 @@ int **parseFile(char name_of_the_file[40]){
    			clause_matrix[matrix_line][matrix_column] = field;
         	//printf("%d ", clause_matrix[matrix_line][matrix_column]);
         	start += n;
-        	matrix_column ++; 
+        	matrix_column ++;
     	}
-    	
+
     //printf("\n");
-    matrix_column= 0;	
+    matrix_column= 0;
     matrix_line ++;
    	}
    	//printf("----------------------------\n" );
 
-   	fclose(fr);  
+   	fclose(fr);
 
    	return clause_matrix;
 }
