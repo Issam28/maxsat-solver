@@ -54,6 +54,7 @@ int masterProc(int argc, char** argv ){
     int cur_maxsat=0;
     int n_solutions=0;
     int* cur_sol;
+    int* final_sol;
     int* first_comb = get_first_comb(n_vars);
     int* cur_comb;
     int idle = 0; //number of processors to which the master didn't send work yet
@@ -67,6 +68,7 @@ int masterProc(int argc, char** argv ){
 
     clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
 		BCastClauseMat(clause_matrix, &n_vars, &n_clauses);
+    final_sol = (int*) malloc(sizeof(int)*n_vars);
     MPI_Comm_size( MPI_COMM_WORLD, &size );
 
     idle=size-1;
@@ -82,6 +84,7 @@ int masterProc(int argc, char** argv ){
       cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, -abs(cur_var)-1, cur_comb, cur_sol, &cur_maxsat, &n_solutions);
     }
 
+
     for(int i=1; i<size; i++){
         MPI_Recv(&temp_maxsat, 1, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
         if(temp_maxsat==cur_maxsat){
@@ -91,10 +94,12 @@ int masterProc(int argc, char** argv ){
           n_solutions=n_solutions+temp_n_sols;
         }else{
           if(temp_maxsat>cur_maxsat){
+            printf("slave %d has a better solution.\n", i);
             code=1; //signal slave to send the number of solutions and one example solution
             MPI_Send(&code, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
             MPI_Recv(&temp_n_sols, 1, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
             n_solutions = temp_n_sols;
+            cur_maxsat = temp_maxsat;
             MPI_Recv(cur_sol, n_vars, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
           }
           else{
@@ -142,10 +147,15 @@ int slaveProc(){
         break;
       case 1:
         MPI_Send(&n_solutions, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
-        MPI_Send(&cur_sol, n_vars, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(cur_sol, n_vars, MPI_INT, 0, 0, MPI_COMM_WORLD);
         break;
     }
 
+    /*if(rank==1){
+      printf("%d %d\n", cur_maxsat, n_solutions);
+      print_sol(cur_sol, n_vars);
+      printf("\n");
+    }*/
 		return 0;
 }
 
@@ -167,7 +177,6 @@ int** BCastClauseMat(int **clause_matrix, int* n_vars, int* n_clauses){
 
   return clause_matrix;
 }
-
 
 
 int* distributeNodes(int depth, int cur_var, int* prev_comb, int n_vars, int* idle, int* to_see, int* master_var){
