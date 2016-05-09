@@ -12,7 +12,7 @@ int clauses_satisfied(int cur_var, int* cur_comb, int* n_clauses_unsatisfied);
 void print_sol();
 void free_matrix();
 void copy_array(int* dest, int* src);
-int are_there_idle_threads();
+int are_there_idle_threads(int cur_lvl);
 
 
 int cur_maxsat=0; 			//contains current best score
@@ -56,7 +56,7 @@ int main(int argc, char** argv){
 		{
 			//here the two children nodes are spawned. if there are avaiable threads, a task is created.
 			//otherwise, this thread will process both nodes
-			if(are_there_idle_threads()){
+			if(n_threads>1){
 				#pragma omp task
 				{
 					MAXSAT(-1, first_comb2, 1); //branch with first variable set to false
@@ -89,6 +89,8 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 	int tid = omp_get_thread_num();
 	int* next_comb;
 	int* next_comb2;
+	#pragma atomic write
+		thread_status[tid] = abs(cur_var);
 
 	n_clauses_satisfied = clauses_satisfied(cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
 
@@ -112,7 +114,7 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 
 			//here the two children nodes are spawned. if there are avaiable threads, a task is created.
 			//otherwise, this thread will process both nodes
-			if(are_there_idle_threads()){
+			if(are_there_idle_threads(abs(cur_var))){
 				#pragma omp task
 				{
 				MAXSAT(-next_var, next_comb, 1); //branch with next var set to false and "root" set to true.
@@ -196,13 +198,24 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 // Utility functions down there
 
 
-int are_there_idle_threads(){
+int are_there_idle_threads(int cur_lvl){
+	int idles = 0;
+	int max = 0;
+	int tid = omp_get_thread_num();
 
-	for(int i=0; i<n_threads; i++)
+	for(int i=0; i<n_threads; i++){
+		if(i==tid)
+			continue;
+
 		if(thread_status[i]==0)
-			return 1;
+			idles = 1;
+		else{
+			if(thread_status[i]>=max)
+				max = thread_status[i];
+		}
+	}
 
-	return 0;
+	return (cur_lvl>=max);
 }
 
 void copy_array(int* dest, int* src){
