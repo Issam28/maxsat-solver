@@ -20,6 +20,7 @@ int* distributeNodes(int depth, int cur_var, int* prev_comb, int n_vars, int* id
 
 int main(int argc, char** argv ){
     int rank, size;
+    double t1,t2;
     MPI_Comm new_comm;
 
     if(argc!=2){
@@ -30,14 +31,22 @@ int main(int argc, char** argv ){
     MPI_Init( &argc, &argv );
     MPI_Comm_rank( MPI_COMM_WORLD, &rank );
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    t1 = MPI_Wtime();
     if (rank == 0){
 			masterProc(argc, argv );
     }
     else{
 			slaveProc();
     }
-
+    MPI_Barrier(MPI_COMM_WORLD);
+    t2=MPI_Wtime();
     MPI_Finalize( );
+
+
+    if(rank==0)
+      printf("Time elapsed: %f\n", t2-t1);
+
     return 0;
 }
 
