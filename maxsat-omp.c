@@ -4,15 +4,16 @@
 #include <omp.h>
 
 
-void MAXSAT(int cur_var, int* prev_comb, int root);
+void MAXSAT(int cur_var, int* cur_comb, int root, int* sat_clauses);
 int** parseFile(char name_of_the_file[40]);
 int* get_cur_comb(int cur_var, int* prev_comb);
-int* get_first_comb();
-int clauses_satisfied(int cur_var, int* cur_comb, int* n_clauses_unsatisfied);
+int* alloc_int_array(int n);
+int clauses_satisfied(int cur_var, int* cur_comb, int* n_clauses_unsatisfied, int* sat_clauses);
 void print_sol();
 void free_matrix();
 void copy_array(int* dest, int* src);
 int are_there_idle_threads(int cur_lvl);
+int* get_cur_sat_clauses(int cur_var, int* prev_sat_clauses);
 
 
 int cur_maxsat=0; 			//contains current best score
@@ -40,13 +41,16 @@ int main(int argc, char** argv){
 	clause_matrix = parseFile(argv[1]);
 
 	//allocate needed arrays
-	int *first_comb = get_first_comb(n_vars);
+	int *first_comb = alloc_int_array(n_vars);
 	first_comb[0]=1;
 
-	int *first_comb2 = get_first_comb(n_vars);
+	int *first_comb2 = alloc_int_array(n_vars);
 	first_comb2[0]=-1;
 
-	cur_sol = get_first_comb(n_vars);
+	int* sat_clauses_1 = alloc_int_array(n_clauses);
+	int* sat_clauses_2 = alloc_int_array(n_clauses);
+
+	cur_sol = alloc_int_array(n_vars);
 
 
 	//root node of the binary tree.
@@ -59,14 +63,14 @@ int main(int argc, char** argv){
 			if(n_threads>1){
 				#pragma omp task
 				{
-					MAXSAT(-1, first_comb2, 1); //branch with first variable set to false
+					MAXSAT(-1, first_comb2, 1, sat_clauses_2); //branch with first variable set to false
 				}
 			}
 			else{
-				MAXSAT(-1, first_comb2, 1);
+				MAXSAT(-1, first_comb2, 1, sat_clauses_2);
 			}
 
-			MAXSAT(1, first_comb, 1); //branch with first variable set to true
+			MAXSAT(1, first_comb, 1, sat_clauses_1); //branch with first variable set to true
 		}
 	}
 
@@ -82,17 +86,17 @@ int main(int argc, char** argv){
 	exit(0);
 }
 
-void MAXSAT(int cur_var, int* cur_comb, int root){
+void MAXSAT(int cur_var, int* cur_comb, int root, int* sat_clauses){
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
 	int next_var;
 	int tid = omp_get_thread_num();
-	int* next_comb;
-	int* next_comb2;
+	int* next_comb, *next_sat_clauses;
+	int* next_comb2, *next_sat_clauses2;
 	#pragma atomic write
 		thread_status[tid] = abs(cur_var);
 
-	n_clauses_satisfied = clauses_satisfied(cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
+	n_clauses_satisfied = clauses_satisfied(cur_var, cur_comb, &n_clauses_unsatisfied, sat_clauses); //calculate number of clauses satisfied and unsatisfied by current combination
 
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
 
@@ -103,6 +107,7 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 					thread_status[tid]=0;
 
 			free(cur_comb);
+			free(sat_clauses);
 			return;
 		}
 		else{
@@ -110,22 +115,23 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 			next_var = abs(cur_var)+1;
 			next_comb = get_cur_comb(-next_var, cur_comb);
 			next_comb2 = get_cur_comb(next_var, cur_comb);
-
+			next_sat_clauses = get_cur_sat_clauses(-next_var, sat_clauses);
+			next_sat_clauses2 = get_cur_sat_clauses(next_var, sat_clauses);
 
 			//here the two children nodes are spawned. if there are avaiable threads, a task is created.
 			//otherwise, this thread will process both nodes
 			if(are_there_idle_threads(abs(cur_var))){
 				#pragma omp task
 				{
-				MAXSAT(-next_var, next_comb, 1); //branch with next var set to false and "root" set to true.
+					MAXSAT(-next_var, next_comb, 1, next_sat_clauses); //branch with next var set to false and "root" set to true.
 												 //this means the thread will return up until here and then become idle again.
 				}
 			}
 			else
-				MAXSAT(-next_var, next_comb, 0); //branch with next var set to false
+				MAXSAT(-next_var, next_comb, 0, next_sat_clauses); //branch with next var set to false
 
 
-			MAXSAT(next_var, next_comb2, 0); //branch with next var set to true
+			MAXSAT(next_var, next_comb2, 0, next_sat_clauses2); //branch with next var set to true
 
 
 			if(root){ //if this is a root node, the thread becomes idle here. otherwise, it still has to return until its root node
@@ -133,7 +139,6 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 					thread_status[tid]=0;
 			}
 
-			free(cur_comb);
 			return;
 		}
 	}
@@ -157,6 +162,7 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 				thread_status[tid]=0;
 		}
 		free(cur_comb);
+		free(sat_clauses);
 		return;
 	}
 }
@@ -184,18 +190,22 @@ void MAXSAT(int cur_var, int* cur_comb, int root){
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 // Utility functions down there
+
+
+int* get_cur_sat_clauses(int cur_var, int* prev_sat_clauses){
+	int* cur_sat_clauses;
+
+	if(cur_var<0)
+		cur_sat_clauses = prev_sat_clauses;
+	else{
+		cur_sat_clauses = (int *) malloc(n_clauses*sizeof(int));
+		for(int i=0; i<n_clauses; i++)
+			cur_sat_clauses[i]=prev_sat_clauses[i];
+	}
+
+	return cur_sat_clauses;
+}
 
 
 int are_there_idle_threads(int cur_lvl){
@@ -220,20 +230,16 @@ int are_there_idle_threads(int cur_lvl){
 
 void copy_array(int* dest, int* src){
 	for(int i=0; i<n_vars; i++){
-		if(src[i]==0)
-		 	break;
-
 		dest[i]=src[i];
 	}
 }
 
 
 
-int* get_first_comb(){
-	int* first_comb = (int *) malloc(n_vars*sizeof(int));
-	int i;
+int* alloc_int_array(int n){
+	int* first_comb = (int *) malloc(n*sizeof(int));
 
-	for(i=0; i<n_vars; i++)
+	for(int i=0; i<n; i++)
 		first_comb[i]=0;
 
 	return first_comb;
@@ -244,9 +250,12 @@ int* get_first_comb(){
 int* get_cur_comb(int cur_var, int* prev_comb){
 	int* cur_comb;
 
-	cur_comb = (int *) malloc(n_vars*sizeof(int));
-
-	copy_array(cur_comb, prev_comb);
+	if(cur_var<0){
+		cur_comb = (int *) malloc(n_vars*sizeof(int));
+		copy_array(cur_comb, prev_comb);
+	}
+	else
+		cur_comb=prev_comb;
 
 	cur_comb[abs(cur_var)-1]=cur_var;
 
@@ -254,20 +263,31 @@ int* get_cur_comb(int cur_var, int* prev_comb){
 }
 
 //for a given combination and current variable, calculate the number of clauses satisfied (and unsatisfied)
-int clauses_satisfied(int cur_var, int* cur_comb, int* unsatisfied){
+int clauses_satisfied(int cur_var, int* cur_comb, int* unsatisfied, int* sat_clauses){
 	int i, j, n_clauses_satisfied=0;
 	int unsat = 0;
 	int var;
 
-
 	for(i=0; i<n_clauses; i++){ //for each clause
-		for(j=0; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
+		if(sat_clauses[i]==-1){
+			*unsatisfied = *unsatisfied + 1;
+			unsat=0;
+			continue;
+		}
+		if(sat_clauses[i]==1){
+			n_clauses_satisfied++;
+			unsat=0;
+			continue;
+		}
+
+		for(j=0; j<20; j++){ //for each variable
 			var = abs(clause_matrix[i][j]);
 
 			if(var==0 || var>abs(cur_var)) // end of clause or we don't know the next variable assignments
 				break;
 
 			if(cur_comb[var-1] == clause_matrix[i][j]){ //if the variable corresponds
+				sat_clauses[i]=1;
 				n_clauses_satisfied++;
 				unsat=0;
 				break; //only one variable needs to match for the clause to be satisfied
@@ -277,10 +297,12 @@ int clauses_satisfied(int cur_var, int* cur_comb, int* unsatisfied){
 		}
 
 		if(unsat==1 && clause_matrix[i][j]==0){
+			sat_clauses[i]=-1;
 			*unsatisfied = *unsatisfied + 1;
 			unsat=0;
 		}
 	}
+
 	return n_clauses_satisfied;
 }
 

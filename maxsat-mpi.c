@@ -6,17 +6,19 @@
 
 int masterProc(int argc, char** argv );
 int slaveProc();
-int* MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb, int* cur_sol, int* cur_maxsat, int* n_solutions);
+int* MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb, int* cur_sol, int* cur_maxsat, int* n_solutions, int* sat_clauses);
 int** parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]);
 int* get_cur_comb(int cur_var, int* prev_comb, int n_vars);
-int* get_first_comb(int n_vars);
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* n_clauses_unsatisfied);
+int* alloc_int_array(int n_vars);
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* unsatisfied, int* sat_clauses);
 void print_sol(int* cur_sol, int n_vars);
 void free_matrix(int **clause_matrix, int n_clauses);
 int** BCastClauseMat(int **clause_matrix, int* n_vars, int* n_clauses);
 void sendProblemParams(int* cur_comb, int cur_var, int n_vars, int proc);
 int* recvProblemParams(int* cur_var, int n_vars);
 int* distributeNodes(int depth, int cur_var, int* prev_comb, int n_vars, int* idle, int* to_see, int* master_var);
+int* get_cur_sat_clauses(int cur_var, int* prev_sat_clauses, int n_clauses);
+
 
 int main(int argc, char** argv ){
     int rank, size;
@@ -64,19 +66,19 @@ int masterProc(int argc, char** argv ){
     int n_solutions=0;
     int* cur_sol;
     int* final_sol;
-    int* first_comb = get_first_comb(n_vars);
     int* cur_comb;
     int idle = 0; //number of processors to which the master didn't send work yet
     int depth;
     int cur_var;
     int to_see;
     int code;
-
     int temp_n_sols, temp_maxsat;
 
 
     clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
-		BCastClauseMat(clause_matrix, &n_vars, &n_clauses);
+    int* first_sat_clauses = alloc_int_array(n_clauses);
+    int* first_comb = alloc_int_array(n_vars);
+    BCastClauseMat(clause_matrix, &n_vars, &n_clauses);
     final_sol = (int*) malloc(sizeof(int)*n_vars);
     MPI_Comm_size( MPI_COMM_WORLD, &size );
 
@@ -89,8 +91,8 @@ int masterProc(int argc, char** argv ){
 
     cur_comb = distributeNodes(depth, 0, first_comb, n_vars, &idle, &to_see, &cur_var);
     if(cur_comb!=NULL){
-      cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, abs(cur_var)+1, cur_comb, cur_sol, &cur_maxsat, &n_solutions);
-      cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, -abs(cur_var)-1, cur_comb, cur_sol, &cur_maxsat, &n_solutions);
+      cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, abs(cur_var)+1, cur_comb, cur_sol, &cur_maxsat, &n_solutions, first_sat_clauses);
+      cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, -abs(cur_var)-1, cur_comb, cur_sol, &cur_maxsat, &n_solutions, first_sat_clauses);
     }
 
 
@@ -136,13 +138,15 @@ int slaveProc(){
     int n_vars, n_clauses;
     int cur_var;
     int code;
+    int* first_sat_clauses;
 
     MPI_Comm_rank( MPI_COMM_WORLD, &rank );
     clause_matrix = BCastClauseMat(clause_matrix,&n_vars,&n_clauses); //transmit n_vars, n_clauses and the clause_matrix to every node
     cur_comb = recvProblemParams(&cur_var, n_vars);
+    first_sat_clauses = alloc_int_array(n_clauses);
 
-    cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, abs(cur_var)+1, cur_comb, cur_sol, &cur_maxsat, &n_solutions);
-    cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, -abs(cur_var)-1, cur_comb, cur_sol, &cur_maxsat, &n_solutions);
+    cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, abs(cur_var)+1, cur_comb, cur_sol, &cur_maxsat, &n_solutions, first_sat_clauses);
+    cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, -abs(cur_var)-1, cur_comb, cur_sol, &cur_maxsat, &n_solutions, first_sat_clauses);
 
 
     //send results to master
@@ -242,7 +246,7 @@ int* recvProblemParams(int* cur_var, int n_vars){
 }
 
 
-int* MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb, int* cur_sol, int* cur_maxsat, int* n_solutions){
+int* MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb, int* cur_sol, int* cur_maxsat, int* n_solutions, int* sat_clauses){
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
 	int next_var;
@@ -250,19 +254,21 @@ int* MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 	int* cur_comb = get_cur_comb(cur_var, prev_comb, n_vars); //knowing the current variable assignment and the previous combination,
 													         //get the current combination
 
+  int* cur_sat_clauses = get_cur_sat_clauses(cur_var, sat_clauses, n_clauses);
 
-	//printf("%f\r", (++prone*100)/pow(2,n_vars) );
-	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
+
+	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied, cur_sat_clauses); //calculate number of clauses satisfied and unsatisfied by current combination
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
 
 		if(n_clauses - n_clauses_unsatisfied < *cur_maxsat){ //no need to go further, no better solution we'll be found -> suggestion from the project sheet
 			free(cur_comb);
+      free(cur_sat_clauses);
 		}
 		else{ //continue going down the tree
 			next_var = abs(cur_var)+1;
 
-			cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb, cur_sol, cur_maxsat, n_solutions); //branch with next var set to true
-			cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb, cur_sol, cur_maxsat, n_solutions); //branch with next var set to false
+			cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb, cur_sol, cur_maxsat, n_solutions, cur_sat_clauses); //branch with next var set to true
+			cur_sol = MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb, cur_sol, cur_maxsat, n_solutions, cur_sat_clauses); //branch with next var set to false
 		}
 		return cur_sol;
 	}
@@ -279,18 +285,32 @@ int* MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 			}
 		}
 		free(cur_comb);
+    free(cur_sat_clauses);
     return cur_sol;
 	}
 }
 
-int* get_first_comb(int n_vars){
-	int* first_comb = (int *) malloc(n_vars*sizeof(int));
-	int i;
+int* alloc_int_array(int n){
+	int* first_comb = (int *) malloc(n*sizeof(int));
 
-	for(i=0; i<n_vars; i++)
+	for(int i=0; i<n; i++)
 		first_comb[i]=0;
 
 	return first_comb;
+}
+
+int* get_cur_sat_clauses(int cur_var, int* prev_sat_clauses, int n_clauses){
+	int* cur_sat_clauses;
+
+	if(cur_var<0)
+		cur_sat_clauses = prev_sat_clauses;
+	else{
+		cur_sat_clauses = (int *) malloc(n_clauses*sizeof(int));
+		for(int i=0; i<n_clauses; i++)
+			cur_sat_clauses[i]=prev_sat_clauses[i];
+	}
+
+	return cur_sat_clauses;
 }
 
 
@@ -316,19 +336,31 @@ int* get_cur_comb(int cur_var, int* prev_comb, int n_vars){
 }
 
 //for a given combination and current variable, calculate the number of clauses satisfied (and unsatisfied)
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* unsatisfied){
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* unsatisfied, int* sat_clauses){
 	int i, j, n_clauses_satisfied=0;
 	int unsat = 0;
-	int var, bit;
+	int var;
 
 	for(i=0; i<n_clauses; i++){ //for each clause
-		for(j=0; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
+		if(sat_clauses[i]==-1){
+			*unsatisfied = *unsatisfied + 1;
+			unsat=0;
+			continue;
+		}
+		if(sat_clauses[i]==1){
+			n_clauses_satisfied++;
+			unsat=0;
+			continue;
+		}
+
+		for(j=0; j<20; j++){ //for each variable
 			var = abs(clause_matrix[i][j]);
 
 			if(var==0 || var>abs(cur_var)) // end of clause or we don't know the next variable assignments
 				break;
 
 			if(cur_comb[var-1] == clause_matrix[i][j]){ //if the variable corresponds
+				sat_clauses[i]=1;
 				n_clauses_satisfied++;
 				unsat=0;
 				break; //only one variable needs to match for the clause to be satisfied
@@ -338,6 +370,7 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 		}
 
 		if(unsat==1 && clause_matrix[i][j]==0){
+			sat_clauses[i]=-1;
 			*unsatisfied = *unsatisfied + 1;
 			unsat=0;
 		}

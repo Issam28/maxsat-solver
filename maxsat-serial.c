@@ -3,14 +3,14 @@
 #include <math.h>
 
 
-void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb);
+void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb, int* sat_clauses);
 int** parseFile(int * n_clauses, int * n_vars, char name_of_the_file[40]);
-int get_bit(int* decimal, int N);
 int* get_cur_comb(int cur_var, int* prev_comb, int n_vars);
-int* get_first_comb(int n_vars);
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* n_clauses_unsatisfied);
+int* alloc_int_array(int n_vars);
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* unsatisfied, int* sat_clauses);
 void print_sol(int* cur_sol, int n_vars);
 void free_matrix(int **clause_matrix, int n_clauses);
+int* get_cur_sat_clauses(int cur_var, int* prev_sat_clauses, int n_clauses);
 
 int cur_maxsat=0;
 int n_solutions=0;
@@ -26,10 +26,11 @@ void main(int argc, char** argv){
 
 	int n_clauses, n_vars;
 	int **clause_matrix = parseFile(&n_clauses, &n_vars, argv[1]);
-	int *first_comb = get_first_comb(n_vars);
+	int *first_comb = alloc_int_array(n_vars);
+	int *sat_clauses = alloc_int_array(n_clauses);
 
-	MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb); //branch with first variable set to true
-	MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb); //branch with first bariable set to false
+	MAXSAT(n_clauses, n_vars, clause_matrix,  1, first_comb, sat_clauses); //branch with first variable set to true
+	MAXSAT(n_clauses, n_vars, clause_matrix, -1, first_comb, sat_clauses); //branch with first bariable set to false
 
 //	free(first_comb);
 
@@ -43,27 +44,28 @@ void main(int argc, char** argv){
 }
 
 
-void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb){
+void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* prev_comb, int* sat_clauses){
 	int n_clauses_satisfied;
 	int n_clauses_unsatisfied=0;
 	int next_var;
 
 	int* cur_comb = get_cur_comb(cur_var, prev_comb, n_vars); //knowing the current variable assignment and the previous combination,
 													         //get the current combination
-
+	int* cur_sat_clauses = get_cur_sat_clauses(cur_var, sat_clauses, n_clauses);
 
 	//printf("%f\r", (++prone*100)/pow(2,n_vars) );
-	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied); //calculate number of clauses satisfied and unsatisfied by current combination
+	n_clauses_satisfied = clauses_satisfied(n_clauses, clause_matrix, cur_var, cur_comb, &n_clauses_unsatisfied, cur_sat_clauses); //calculate number of clauses satisfied and unsatisfied by current combination
 	if(abs(cur_var)<n_vars){ //we're not on the last variable -> we're not on a leaf
 
 		if(n_clauses - n_clauses_unsatisfied < cur_maxsat){ //no need to go further, no better solution we'll be found -> suggestion from the project sheet
 			free(cur_comb);
+			free(cur_sat_clauses);
 		}
 		else{ //continue going down the tree
 			next_var = abs(cur_var)+1;
 
-			MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb); //branch with next var set to true
-			MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb); //branch with next var set to false
+			MAXSAT(n_clauses, n_vars, clause_matrix,  next_var, cur_comb, cur_sat_clauses); //branch with next var set to true
+			MAXSAT(n_clauses, n_vars, clause_matrix, -next_var, cur_comb, cur_sat_clauses); //branch with next var set to false
 		}
 		return;
 	}
@@ -80,19 +82,32 @@ void MAXSAT(int n_clauses, int n_vars, int** clause_matrix, int cur_var, int* pr
 			}
 		}
 		free(cur_comb);
+		free(cur_sat_clauses);
 	}
 }
 
-int* get_first_comb(int n_vars){
-	int* first_comb = (int *) malloc(n_vars*sizeof(int));
-	int i;
+int* alloc_int_array(int n){
+	int* first_comb = (int *) malloc(n*sizeof(int));
 
-	for(i=0; i<n_vars; i++)
+	for(int i=0; i<n; i++)
 		first_comb[i]=0;
 
 	return first_comb;
 }
 
+int* get_cur_sat_clauses(int cur_var, int* prev_sat_clauses, int n_clauses){
+	int* cur_sat_clauses;
+
+	if(cur_var<0)
+		cur_sat_clauses = prev_sat_clauses;
+	else{
+		cur_sat_clauses = (int *) malloc(n_clauses*sizeof(int));
+		for(int i=0; i<n_clauses; i++)
+			cur_sat_clauses[i]=prev_sat_clauses[i];
+	}
+
+	return cur_sat_clauses;
+}
 
 //to obtain the combination, we copy the previous combination and assign the current variable accordingly. actually we only copy half of the time. half of the children reuse the parent's array, the other's copy it.
 int* get_cur_comb(int cur_var, int* prev_comb, int n_vars){
@@ -113,19 +128,31 @@ int* get_cur_comb(int cur_var, int* prev_comb, int n_vars){
 }
 
 //for a given combination and current variable, calculate the number of clauses satisfied (and unsatisfied)
-int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* unsatisfied){
+int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_comb, int* unsatisfied, int* sat_clauses){
 	int i, j, n_clauses_satisfied=0;
 	int unsat = 0;
-	int var, bit;
+	int var;
 
 	for(i=0; i<n_clauses; i++){ //for each clause
-		for(j=0; j<20; j++){ //for each variable -> each variable is a bit of cur_ass
+		if(sat_clauses[i]==-1){
+			*unsatisfied = *unsatisfied + 1;
+			unsat=0;
+			continue;
+		}
+		if(sat_clauses[i]==1){
+			n_clauses_satisfied++;
+			unsat=0;
+			continue;
+		}
+
+		for(j=0; j<20; j++){ //for each variable
 			var = abs(clause_matrix[i][j]);
 
 			if(var==0 || var>abs(cur_var)) // end of clause or we don't know the next variable assignments
 				break;
 
 			if(cur_comb[var-1] == clause_matrix[i][j]){ //if the variable corresponds
+				sat_clauses[i]=1;
 				n_clauses_satisfied++;
 				unsat=0;
 				break; //only one variable needs to match for the clause to be satisfied
@@ -135,6 +162,7 @@ int clauses_satisfied(int n_clauses, int** clause_matrix, int cur_var, int* cur_
 		}
 
 		if(unsat==1 && clause_matrix[i][j]==0){
+			sat_clauses[i]=-1;
 			*unsatisfied = *unsatisfied + 1;
 			unsat=0;
 		}
