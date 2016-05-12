@@ -1,0 +1,149 @@
+\documentclass[paper=a4, fontsize=11pt]{scrartcl} % A4 paper and 11pt font size
+\usepackage{graphicx}
+\usepackage[T1]{fontenc} % Use 8-bit encoding that has 256 glyphs
+\usepackage[utf8]{inputenc}
+\usepackage{hyphenat}
+\usepackage{pbox}
+\usepackage{fourier} % Use the Adobe Utopia font for the document - comment this line to return to the LaTeX default
+\usepackage[table]{xcolor}
+\usepackage[english]{babel} % English language/hyphenation
+\usepackage{amsmath,amsfonts,amsthm} % Math packages
+\usepackage{indentfirst}
+\usepackage{sectsty} % Allows customizing section commands
+\allsectionsfont{\raggedright\normalfont\scshape} % Make all sections centered, the default font and small caps
+\usepackage{fancyhdr} % Custom headers and footers
+\pagestyle{fancyplain} % Makes all pages in the document conform to the custom headers and footers
+\fancyhead{} % No page header - if you want one, create it in the same way as the footers below
+\fancyfoot[L]{} % Empty left footer
+\fancyfoot[C]{} % Empty center footer
+\fancyfoot[R]{\thepage} % Page numbering for right footer
+\renewcommand{\headrulewidth}{0pt} % Remove header underlines
+\renewcommand{\footrulewidth}{0pt} % Remove footer underlines
+\setlength{\headheight}{5.6pt} % Customize the height of the header
+
+\numberwithin{equation}{section} % Number equations within sections (i.e. 1.1, 1.2, 2.1, 2.2 instead of 1, 2, 3, 4)
+\numberwithin{figure}{section} % Number figures within sections (i.e. 1.1, 1.2, 2.1, 2.2 instead of 1, 2, 3, 4)
+\numberwithin{table}{section} % Number tables within sections (i.e. 1.1, 1.2, 2.1, 2.2 instead of 1, 2, 3, 4)
+
+%----------------------------------------------------------------------------------------
+%	TITLE SECTION
+%----------------------------------------------------------------------------------------
+
+\newcommand{\horrule}[1]{\rule{\linewidth}{#1}} % Create horizontal rule command with 1 argument of height
+
+\title{
+	\includegraphics[scale=0.29]{IST_A_CMYK_POS}\\
+	MAXSAT Solver using OpenMP
+}
+
+\author{Guilherme Pires\\ \texttt{75432} \and
+		David Fernandes\\ \texttt{75912} \and
+		Antonio Civita\\ \texttt{85438}
+} % Your name
+
+\date{\normalsize\today} % Today's date or a custom date
+
+
+\begin{document}
+% IST Logo - Signature A
+% parameters: bb=llx lly urx ury (bounding box), width=h_length, height=v_length, angle=angle, scale=factor, clip=true/false, draft=true/false.
+\maketitle % Print the title
+
+%----------------------------------------------------------------------------------------
+%	PROBLEM 1
+%----------------------------------------------------------------------------------------
+
+\section{Introduction}
+
+The goal of this assignment was to implement a solver for the MAXSAT problem. This problem consists of, given a set of logical
+clauses, finding the maximum number of clauses that can be satisfied and the variable assignment/assignments that
+accomplishes/accomplish this number.
+
+We implemented three versions of this solver: a serial version, an OpenMP version and an MPI version.
+
+%------------------------------------------------
+
+\section{Serial implementation}
+
+To solve the problem with a serial program, we implemented a recursive approach, in order to traverse a binary tree
+whose nodes correspond to partial variable assignments (the leaves correspond to complete assignments) $ \to $
+Branch and Bound algorithm.
+
+To avoid visiting unnecessary nodes, a prune strategy was also implemented, as suggested in the project assignment sheet.
+%------------------------------------------------
+
+\section{OpenMP implementation}
+
+\subsection{Parallelization approach}
+To parallelize the serial algorithm using OpenMP, we wanted to have the tree traversing job (ideally) equally divided by all of
+the threads.
+In order to do so, we used a global data structure to keep track of each thread's status. Doing this allows each thread to check
+if other threads are idle, at the moment of branching, thus deciding if it should process both of the siblings it will generate,
+or spawn a task and leave one of the siblings to be processed by one of the possibly availavle threads.
+\subsection{Synchronization concerns}
+\subsubsection{Score and solution}
+In order to properly keep track of the best score at each instant, whenever a thread reaches a leaf it has to determine whether
+the score it found is greater or equal to the current maximum. Since more than one thread can reach a leaf at the sime time, we
+have to place this tests and possible write operations inside a critical section, to ensure its correct handling.
+\subsubsection{Threads' status}
+Because a thread might change its status while another one spawns a task, the access to the threads' status array also has to be
+made atomically, to avoid spawning tasks when there's actually no thread available or missing the chance to assign a branch to an
+idle thread, which would lead to a more unbalanced load.
+\subsection{Load balancing}
+As described, keeping track of the status of each thread allows us to allocate work to idle threads at the moment of branching,
+in each node. Since more than one thread might try to assign a task to an idle thread, we give priority to threads working on
+deeper nodes of the tree. We do this by keeping track of each thread's status not only in a binary way (\emph{idle vs busy}) but
+by keeping record of the depth level each thread is in. By doing so, at the moment of branching each thread will check if its
+level is deeper than other busy threads' levels. Only in that case will it spawn a task.
+
+This resembles a DFS approach and leads to more prune conditions being met (because of a faster increase in the maximum
+score at each instant).
+\section{MPI implementation}
+\subsection{Parallelization approach}
+In order to parallelize this problem using a MPI implementation, the problem had to be divided into several independent
+sub-problems. We did this by splitting the binary tree by the available processors and solving a smaller subtree in each one,
+serially. The master mPI-node (i.e., \emph{rank==0}) also computes part of the tree. When each of the slave MPI-nodes (i.e., \emph{rank>0})
+ends its computation, it sends the result back to the master MPI-node, which compares each MPI-node's results (including its own) and
+determins the final answer.
+\subsection{Load Balancing}
+As mentioned, the initial tree gets divided in smaller trees, which are sent to each MPI-node. By doing so, the MPI-nodes don't need to
+communicate during their task to find their local solution. This can, however, lead to unbalanced load situations. In the case that one
+of the sub-trees is more quickly solvable than the others, the MPI-node to which it was assigned will be idle for some amount of time.
+Also, the prune strategy might not be as effective as it were in the previous version, because it might be that
+a branch has a good enough value to make other branches prune, but if they belong to different MPI-nodes, they won't "see" each other.
+Still, the prune strategy is applied locally, in each MPI-node.\\[3pt]
+This would be a good place to further improve this project's performance: finding a good way to avoid idle processors, without
+too much communication overhead. Another good improvement would be to run a parallel version of the algorithm in each MPI-node, instead
+of a serial one (easily achievable, since we already implemented a parallel version in the previous assignment).
+
+\section{Performance results}
+The following table compares the obtained results by the three algorithms, in the provided input instances (time values are in seconds).
+The Serial version and the OpenMP version were tested with an Intel\textregistered Core\texttrademark i5-2520M CPU @ 2.50GHz.
+The MPI version was tested with RNL's cluster.
+\begin{center}
+\begin{tabular}{|m{2.5cm}|c|c|c|c|c|c|c|c|c|c|}
+	\cline{2-11}
+	\multicolumn{1}{c|}{} & \multicolumn{2}{c|}{ex1.in} & \multicolumn{2}{c|}{ex2.in} & \multicolumn{2}{c|}{ex3.in} & \multicolumn{2}{c|}{ex4.in} & \multicolumn{2}{c|}{ex5.in} \\
+	\cline{2-11}
+	\multicolumn{1}{c|}{} & $T_{elaps}$ & $S_{up}$ \cellcolor{gray!25} & $T_{elaps}$ & $S_{up}$ \cellcolor{gray!25} & $T_{elaps}$ & $S_{up}$ \cellcolor{gray!25} & $T_{elaps}$ & $S_{up}$ \cellcolor{gray!25} & $T_{elaps}$ & $S_{up}$ \cellcolor{gray!25} \\
+	\hline
+	Serial version & 0,002 & - \cellcolor{gray!25} & 0,007 & - \cellcolor{gray!25} & 29,676 & - \cellcolor{gray!25} & 421,42 & - \cellcolor{gray!25} & 420,37 & - \cellcolor{gray!25} \\
+	\hline
+	\nohyphens{OpenMP~version \small{(1~thread)}} & 0,003 & 0,66 \cellcolor{gray!25} & 0,07 & 0,1 \cellcolor{gray!25} & 27,715 & 2,43 \cellcolor{gray!25} & 374,18 & 1,12 \cellcolor{gray!25} & 439,18 & 0,96 \cellcolor{gray!25}\\
+	\hline
+	\nohyphens{OpenMP~version \small{(2~threads)}} & 0,003 & 0,66  \cellcolor{gray!25}& 0,07 & 0,1 \cellcolor{gray!25} & 15,204 & 1,95 \cellcolor{gray!25} & 154,39 & 2,72 \cellcolor{gray!25} & 239,56 & 1,75 \cellcolor{gray!25}\\
+	\hline
+	\nohyphens{OpenMP~version \small{(4~threads)}} & 0,013 & 0,153 \cellcolor{gray!25} & 0,014 & 0,5 \cellcolor{gray!25} & 12,169 & 2,43 \cellcolor{gray!25} & 130,05 & 3,24 \cellcolor{gray!25} & 176,69 & 2,38 \cellcolor{gray!25}\\
+	\hline
+	\nohyphens{MPI version \small{(2~processors)}} & 0,002 & 1 \cellcolor{gray!25} & 0,003 & 2,33 \cellcolor{gray!25} & 15,822 & 1,87 \cellcolor{gray!25} & 262,68 & 1,60 \cellcolor{gray!25} & 210,09 & 2,00 \cellcolor{gray!25}\\
+	\hline
+	\nohyphens{MPI version \small{(4~processors)}} & 0,003 & 0,66 \cellcolor{gray!25} & 0,003 & 2,33 \cellcolor{gray!25} & 9,011 & 3,29 \cellcolor{gray!25} & 157,37 & 2,68 \cellcolor{gray!25} & 129,80 & 3,24 \cellcolor{gray!25}\\
+	\hline
+	\nohyphens{MPI version \small{(8~processors)}} & 0,005 & 0,4 \cellcolor{gray!25} & 0,005 & 0,4 \cellcolor{gray!25} & 5,06 & 5,86 \cellcolor{gray!25} & 58,45 & 7,21
+\cellcolor{gray!25} & 71,244 & 5,90 \cellcolor{gray!25}\\
+	\hline
+
+\end{tabular}
+\end{center}
+
+\end{document}
