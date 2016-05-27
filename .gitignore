@@ -5,3 +5,4 @@ old-approach
 maxsat-serial
 maxsat-omp
 maxsat-mpi
+*report*
